@@ -1,0 +1,167 @@
+from fastapi import APIRouter, UploadFile, File, HTTPException
+import pandas as pd
+import numpy as np
+from io import StringIO
+from datetime import datetime
+
+from services.anomaly_service import anomaly_service
+
+router = APIRouter()
+
+
+# -----------------------------------
+# Helper: Convert dataframe → windows
+# -----------------------------------
+def create_sliding_windows(data: np.ndarray, window_size: int = 10):
+    """
+    Converts raw time-series into sliding windows
+    for VAE + GRU models.
+    """
+    windows = []
+
+    for i in range(len(data) - window_size + 1):
+        window = data[i:i + window_size]
+        windows.append(window)
+
+    return np.array(windows)
+
+
+# -----------------------------------
+# Upload Time-Series CSV
+# -----------------------------------
+@router.post("/upload/time-series")
+async def upload_time_series(file: UploadFile = File(...)):
+    """
+    Accepts CSV with columns:
+    timestamp, engine_temperature
+    """
+
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files allowed")
+
+    try:
+        contents = await file.read()
+        df = pd.read_csv(StringIO(contents.decode("utf-8")))
+
+        # Validate required columns
+        required_cols = {"timestamp", "engine_temperature"}
+        if not required_cols.issubset(df.columns):
+            raise HTTPException(
+                status_code=400,
+                detail=f"CSV must contain columns: {required_cols}"
+            )
+
+        # Sort by time
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.sort_values("timestamp")
+
+        temperatures = df["engine_temperature"].values
+
+        # Create sequence windows for ML models
+        window_size = 10
+        windows = create_sliding_windows(temperatures, window_size)
+
+        results = []
+
+        # -----------------------------------
+        # Run anomaly detection per window
+        # -----------------------------------
+        for i, window in enumerate(windows):
+            temp_point = float(window[-1])
+            timestamp = df["timestamp"].iloc[i + window_size - 1]
+
+            hybrid_result = anomaly_service.hybrid_detect(
+                temperature=temp_point,
+                sequence=window.reshape(-1, 1)
+            )
+
+            results.append({
+                "timestamp": timestamp,
+                "temperature": temp_point,
+                "is_anomaly": hybrid_result["is_anomaly"],
+                "confidence": hybrid_result["confidence"],
+                "reconstruction_error": hybrid_result.get("reconstruction_error"),
+                "gru_score": hybrid_result.get("gru_score")
+            })
+
+        # -----------------------------------
+        # Summary Metrics (for evaluation)
+        # -----------------------------------
+        total = len(results)
+        anomalies = sum(r["is_anomaly"] for r in results)
+
+        return {
+            "status": "success",
+            "total_points": total,
+            "anomalies_detected": anomalies,
+            "anomaly_rate": round(anomalies / total, 4) if total > 0 else 0,
+            "results": results
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# -----------------------------------
+# Upload + Compare Models (Evaluation Mode)
+# -----------------------------------
+@router.post("/upload/evaluate")
+async def evaluate_models(file: UploadFile = File(...)):
+    """
+    Compares:
+    - Static Threshold
+    - VAE-GRU
+    - Hybrid
+
+    Used for proving reduced false negatives.
+    """
+
+    try:
+        contents = await file.read()
+        df = pd.read_csv(StringIO(contents.decode("utf-8")))
+
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.sort_values("timestamp")
+
+        temperatures = df["engine_temperature"].values
+
+        static_anomalies = 0
+        advanced_anomalies = 0
+        hybrid_anomalies = 0
+
+        results = []
+
+        for temp in temperatures:
+            sequence = np.array([[temp]])
+
+            static = anomaly_service.static_detect(temp)
+            advanced = anomaly_service.advanced_detect(sequence)
+            hybrid = anomaly_service.hybrid_detect(temp, sequence)
+
+            static_anomalies += int(static["is_anomaly"])
+            advanced_anomalies += int(advanced["is_anomaly"])
+            hybrid_anomalies += int(hybrid["is_anomaly"])
+
+            results.append({
+                "temperature": temp,
+                "static": static["is_anomaly"],
+                "advanced": advanced["is_anomaly"],
+                "hybrid": hybrid["is_anomaly"]
+            })
+
+        total = len(temperatures)
+
+        return {
+            "total_points": total,
+            "static_anomalies": static_anomalies,
+            "advanced_anomalies": advanced_anomalies,
+            "hybrid_anomalies": hybrid_anomalies,
+            "false_negative_reduction_proxy": round(
+                (advanced_anomalies - hybrid_anomalies) / max(advanced_anomalies, 1) * 100,
+                2
+            ),
+            "results": results
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
