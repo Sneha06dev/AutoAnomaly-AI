@@ -74,7 +74,7 @@ graph TD
 ```
 
 ## Architecture
-
+```
 AutoAnomaly-AI/
 ├── backend/
 │   ├── app/
@@ -138,6 +138,7 @@ AutoAnomaly-AI/
 ├── .gitignore
 └── README.md
 
+```
 ## Prerequisites
 
 - Python 3.8+
