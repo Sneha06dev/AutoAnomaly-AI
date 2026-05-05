@@ -22,6 +22,122 @@ graph TB
     B --> J[Database/API<br/>Historical Data]
 ```
 
+## Detailed Pipeline Diagrams
+
+### VAE+GRU Anomaly Detection Pipeline
+
+```mermaid
+graph TD
+    A[Sensor Data Input<br/>Time Series] --> B[Data Preprocessing<br/>Normalization, Windowing]
+    B --> C[VAE Branch]
+    B --> D[GRU Branch]
+    
+    C --> E[VAE Encoder<br/>Compress to Latent Space]
+    E --> F[VAE Decoder<br/>Reconstruct Input]
+    F --> G[Reconstruction Error<br/>MSE Loss]
+    
+    D --> H[GRU Network<br/>Temporal Dependencies]
+    H --> I[Sequence Prediction<br/>Next Step Forecast]
+    I --> J[Prediction Error<br/>Forecast Accuracy]
+    
+    G --> K[Fusion Layer<br/>Weighted Combination]
+    J --> K
+    K --> L[Anomaly Score<br/>Combined Metric]
+    L --> M[Threshold Comparison<br/>Dynamic Threshold]
+    M --> N{Anomaly?<br/>Yes/No}
+    
+    N --> O[Normal Operation]
+    N --> P[Anomaly Detected<br/>Alert Generation]
+```
+
+### SHAP Explainability Layer
+
+```mermaid
+graph TD
+    A[Anomaly Detection Model<br/>VAE+GRU Pipeline] --> B[SHAP Explainer<br/>Initialize]
+    B --> C[Generate Background Dataset<br/>Representative Normal Samples]
+    
+    D[Test Instance<br/>Anomalous Data Point] --> E[SHAP Kernel Explainer]
+    C --> E
+    A --> E
+    
+    E --> F[Compute SHAP Values<br/>Feature Contributions]
+    F --> G[Feature Importance Scores<br/>Positive/Negative Impact]
+    
+    G --> H[Local Explanation<br/>Why this instance is anomalous]
+    G --> I[Global Feature Ranking<br/>Most important features]
+    
+    H --> J[Interactive Dashboard<br/>Feature contribution plots]
+    I --> J
+    
+    J --> K[Model Interpretability<br/>Trust & Debugging]
+```
+
+## Architecture
+
+AutoAnomaly-AI/
+├── backend/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── endpoints/
+│   │   │   │   ├── data.py
+│   │   │   │   ├── models.py
+│   │   │   │   ├── detection.py
+│   │   │   │   └── auth.py
+│   │   │   └── middleware/
+│   │   ├── models/
+│   │   │   ├── ml_models.py
+│   │   │   ├── database_models.py
+│   │   │   └── schemas.py
+│   │   ├── services/
+│   │   │   ├── anomaly_detector.py
+│   │   │   ├── data_processor.py
+│   │   │   └── model_manager.py
+│   │   ├── utils/
+│   │   │   ├── preprocessing.py
+│   │   │   └── validators.py
+│   │   └── main.py
+│   ├── tests/
+│   ├── requirements.txt
+│   ├── .env.example
+│   └── Dockerfile
+│
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── Dashboard.jsx
+│   │   │   ├── DataUpload.jsx
+│   │   │   ├── AnomalyVisualization.jsx
+│   │   │   └── ModelConfig.jsx
+│   │   ├── pages/
+│   │   ├── services/
+│   │   │   └── api.js
+│   │   ├── styles/
+│   │   ├── App.jsx
+│   │   └── index.js
+│   ├── package.json
+│   ├── .env.example
+│   └── Dockerfile
+│
+├── config/
+│   ├── model_config.yaml
+│   └── app_config.yaml
+│
+├── data/
+│   ├── input/
+│   ├── output/
+│   └── models/
+│
+├── docs/
+│   ├── API.md
+│   ├── MODELS.md
+│   └── DEPLOYMENT.md
+│
+├── docker-compose.yml
+├── .gitignore
+└── README.md
+
 ## Prerequisites
 
 - Python 3.8+
